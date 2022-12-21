@@ -58,6 +58,13 @@ This dashboard includes several pages:
 
 6.  Analysis: A regression tree predicting movie rating
 
+------------------------------------------------------------------------
+
+
+[![IMAGE_ALT](https://img.youtube.com/vi/nOP3FJq4-so/0.jpg)](https://www.youtube.com/watch?v=nOP3FJq4-so)
+
+
+
 ## Column {data-width="30"}
 
 ```{r, echo=FALSE}
@@ -249,7 +256,7 @@ DT::renderDataTable({
 
 ### 
 
-In this analysis, we will be displaying an example of rpart applied to the horror films dataset. We will be using rpart to develop a model that predicts rating based on some factors of the movie. We are therefore working to answer the question, what factors of horror movies make them more likely to have a good rating? The visuals in the other tabs on this dashboard provide a helpful background for developing this model.
+In this analysis, we will be displaying an example of rpart applied to the horror films dataset. We will be using rpart to develop a model that predicts rating based on some factors of the movie. We are therefore working to answer the question, what factors of horror movies make them more likely to have a good rating? The visuals in the other tabs on this dashboard provide a helpful background for developing this model. In our regression tree, we include the following predictors: run time, release country, release year, and genre (thriller, drama, comedy, or mystery). We fit the model on a training dataset that is a random sample of 75% of our data, and then we test it on the remaining data. The right hand column on this page reports the training and testing mean squared error (MSE).
 
 ------------------------------------------------------------------------
 
