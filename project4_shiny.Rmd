@@ -1,0 +1,291 @@
+---
+title: "Horror Film Ratings: 2012-2017"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+  runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(lubridate)
+library(rpart)
+library(rsample)
+library(shiny)
+library(rpart.plot)
+```
+
+```{r, message=F, warning=F}
+current_wd <- getwd()
+if (file.exists("data")) {
+  setwd(file.path(current_wd, "data"))
+} else {
+  dir.create(file.path(current_wd, "data"))
+  setwd(file.path(current_wd, "data"))
+}
+
+if (file.exists("horror_films.csv")) {
+  horror_films <- readr::read_csv("horror_films.csv")
+} else {
+  horror_films <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-10-22/horror_movies.csv")
+  readr::write_csv(horror_films, "horror_films.csv")
+}
+```
+
+# About
+
+## Column {data-width="70"}
+
+### 
+
+In this dashboard, we investigate a dataset of horror film ratings based on various features. The data contains information about the film genre, release date, reviews, run time, case, budget, etc. This data can be found at: <https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-10-22>. This link also contains a data dictionary.
+
+------------------------------------------------------------------------
+
+This dashboard includes several pages:
+
+1.  The Data: an overview and glimpse into the rows of the data
+
+2.  Ratings: Distribution of film ratings by year
+
+3.  Genres: Frequency of films per genre
+
+4.  Run Time: Movie length based on several different factors
+
+5.  Budget: Lists of movies by minimum budget
+
+6.  Analysis: A regression tree predicting movie rating
+
+## Column {data-width="30"}
+
+```{r, echo=FALSE}
+knitr::include_graphics(here::here("images", "worldwarz.jpeg"))
+```
+
+# The Data
+
+## Column {data-width="100"}
+
+### 
+
+This [data](https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-10-22) is from [TidyTuesday](https://github.com/rfordatascience/tidytuesday) who pulled it from [IMDB](https://www.imdb.com/). It contains 3,328 horror films released between 2012-2017. For each film, there is information about the other genres, the release date and location, the rating and run time, the plot and cast, the budget, and more. Importantly, there is a review rating for each movie as well.
+
+------------------------------------------------------------------------
+
+```{r, echo=FALSE}
+DT_table <- horror_films %>%
+  select(-c(plot, cast, language))
+names(DT_table) <- c("Title","Genres","Release Date","Release Country",
+                     "Rating","Review","Run Time","Filming Locations","Budget")
+```
+
+```{r, echo=FALSE}
+DT::renderDataTable({
+  DT::datatable(DT_table,
+                caption = "Glimpse of the data",
+                options = list(autoWidth = TRUE,
+                                 pageLength = 10,
+                                 scroller = TRUE,
+                                 scrollY = '450px'))
+})
+```
+
+# Ratings
+
+```{r message=F, warning=F, echo=F}
+horror_rel <- horror_films %>%
+  filter(is.na(review_rating)==F) %>%
+  mutate(release_year = ifelse(release_date %in% c("2012","2013","2014",
+                                                   "2015","2016","2017"),
+                               release_date,
+                               year(dmy(release_date))),
+         release_year = as.numeric(release_year),
+         release_country = factor(ifelse(release_country == "USA", "USA", "Other")),
+         genre_thriller = ifelse(str_detect(genres, "Thriller"), 1, 0),
+         genre_drama = ifelse(str_detect(genres, "Drama"), 1, 0),
+         genre_comedy = ifelse(str_detect(genres, "Comedy"), 1, 0),
+         genre_mystery = ifelse(str_detect(genres, "Mystery"), 1, 0),
+         movie_run_time = str_remove(movie_run_time, " min"),
+         movie_run_time = as.numeric(movie_run_time))
+```
+
+## Column {.sidebar}
+
+Distribution of movie review ratings by year.
+
+```{r}
+selectInput("year", label = "Year:",
+            choices = c(2012, 2013, 2014, 2015, 2016, 2017), selected = 2012)
+
+selectInput("n_bins", label = "Number of Bins:",
+            choices = c(10,20,35,50), selected = 20)
+```
+
+## Column
+
+### Film Ratings
+
+```{r}
+renderPlot({
+  horror_rel %>%
+    filter(release_year == as.numeric(input$year)) %>%
+    ggplot(aes(x=review_rating)) +
+    geom_histogram(bins = as.numeric(input$n_bins), color="black", fill="white") +
+    xlab("Review Rating") + ylab("Number of Films") +
+    ggtitle("Frequency of Films with Different Ratings") +
+    theme(text = element_text(size=15))
+})
+```
+
+# Genres
+
+## Column
+
+```{r}
+pattern_detect <- function(pattern) {
+  setNames(data.frame(sum(str_detect(horror_films$genres, pattern),na.rm=T)), pattern)
+}
+genre <- purrr::map_dfc(.x=c("Drama","Comedy","Horror","Mystery",
+                "Thriller","Fantasy","Action","Sci-Fi"),
+        .f=pattern_detect)
+#print(genre)
+
+genre_t <- t(genre) %>% data.frame()
+names(genre_t) <- "Number"
+```
+
+```{r}
+renderPlot({
+  genre_t %>%
+  rownames_to_column("Genre") %>%
+  ggplot(aes(x=reorder(Genre,-Number), y=Number)) +
+  geom_bar(stat="identity") +
+  theme(text = element_text(size=15)) +
+  xlab("Genre") + ylab("Number of Films") +
+  labs(title = "Number of Films with each Genre Label",
+       subtitle = "Horror Films from IMDB",
+       caption = "Films could have more than one genre")
+})
+```
+
+# Run Time
+
+## Column {.tabset .tabset-fade data-width="100"}
+
+### Run Time by Rating
+
+```{r}
+horror_rel %>%
+  filter(is.na(movie_rating) == F,
+         is.na(movie_run_time) == F) %>%
+  ggplot(aes(x=movie_rating, y=movie_run_time)) +
+  geom_boxplot() +
+  xlab("Movie Rating") + ylab("Movie Run Time") + 
+  ggtitle("Distribution of Movie Run Times by Ratings")
+```
+
+### Run Time by Country
+
+```{r}
+horror_rel %>%
+  filter(is.na(release_country) == F,
+         is.na(movie_run_time) == F) %>%
+  ggplot(aes(x=release_country, y=movie_run_time)) +
+  geom_boxplot() +
+  xlab("Country of Release") + ylab("Movie Run Time") + 
+  ggtitle("Distribution of Movie Run Times by Country")
+```
+
+### Run Time by Release Year
+
+```{r}
+horror_rel %>%
+  filter(is.na(movie_run_time) == F) %>%
+  ggplot(aes(x=factor(release_year), y=movie_run_time)) +
+  geom_boxplot() +
+  xlab("Year of Release") + ylab("Movie Run Time") + 
+  ggtitle("Distribution of Movie Run Times by Year")
+```
+
+# Budget
+
+## Column {.sidebar}
+
+Distribution of movie review ratings by year.
+
+```{r}
+selectInput("budget", label = "Minimum Budget (in millions):",
+            choices = c(1, 5, 10, 30, 50), selected = 10)
+```
+
+## Column
+
+```{r}
+top_budgets <- horror_rel %>%
+  filter(str_detect(budget, "\\$")==T) %>%
+  mutate(budget2 = parse_number(budget)) %>%
+  arrange(desc(budget2)) %>%
+  select(title, budget, genres:movie_rating, movie_run_time, plot, cast, budget2)
+names(top_budgets) <- c("Title","Budget","Genres","Release Date","Release Country",
+                        "Rating","Run Time","Plot","Cast","NumBudg")
+```
+
+```{r}
+DT::renderDataTable({
+  DT::datatable(select(filter(top_budgets, NumBudg >= as.numeric(input$budget)*1000000),-NumBudg),
+                caption = "Highest Budget Films",
+                options = list(autoWidth = TRUE,
+                                 pageLength = 10,
+                                 scroller = TRUE,
+                                 scrollY = '450px'))
+})
+```
+
+# Analysis
+
+## Column {data-width="70"}
+
+### 
+
+In this analysis, we will be displaying an example of rpart applied to the horror films dataset. We will be using rpart to develop a model that predicts rating based on some factors of the movie. We are therefore working to answer the question, what factors of horror movies make them more likely to have a good rating? The visuals in the other tabs on this dashboard provide a helpful background for developing this model.
+
+------------------------------------------------------------------------
+
+```{r, echo=F}
+split <- initial_split(horror_rel, prop=3/4)
+train <- training(split)
+test <- testing(split)
+
+#fit model
+set.seed(2)
+fit <- rpart(review_rating ~ movie_run_time + release_country + release_year +
+               genre_thriller + genre_drama + genre_comedy + genre_mystery,
+             data = train)
+
+#prune
+#printcp(fit)
+set.seed(2)
+pfit <- prune(fit, cp=fit$cptable[which.min(fit$cptable[,"xerror"]), "CP"])
+
+rpart.plot(pfit)
+#post(pfit, file = "resulting_tree.pdf",
+#     title = "Pruned Regression Tree for Movie Rating")
+```
+
+## Column {data-width="30"}
+
+```{r}
+train_pred <- predict(pfit)
+test_pred <- predict(pfit, test)
+ # test %>%
+ #   bind_cols(pred_rating = test_pred) %>%
+ #   ggplot(aes(x=review_rating, y=pred_rating)) +
+ #   geom_point() +
+ #   geom_abline(slope=1, intercept=0) +
+ #   xlab("True Rating") + ylab("Predicted Rating")
+tab <- data.frame(MSE = c(round(mean((train$review_rating - train_pred)^2),2),round(mean((test$review_rating - test_pred)^2),2)))
+rownames(tab) <- c("Training Data", "Testing Data")
+knitr::kable(tab, align='c')
+```
