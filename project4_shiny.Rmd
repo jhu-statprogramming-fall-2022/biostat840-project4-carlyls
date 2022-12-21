@@ -15,6 +15,7 @@ library(rpart)
 library(rsample)
 library(shiny)
 library(rpart.plot)
+library(rsconnect)
 ```
 
 ```{r, message=F, warning=F}
